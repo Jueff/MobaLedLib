@@ -270,17 +270,27 @@
 
 #ifdef ESP32                                                                                                  // 30.10.20: Juergen
   #include "esp_task_wdt.h"																					  // 05.03.21: Juergen - needed to reset watchdog timer while Farbtest is active
+  #include <EEPROM.h>
+  #define EEPROM_SIZE 512			// maximum size of the eeprom
+  //#define EEPROM_OFFSET 0			// (the first 96 byte are reserved for WIFI configuration)  // 28.11.2020 comment out -> WIFI config no longer stored in EEPROM
+  #ifdef USE_SX_INTERFACE
+      #define SX_SIGNAL_PIN 4
+      #define SX_CLOCK_PIN 13
+      #define SX_STATUS_PIN  2  // Build in LED
+      #include "SXInterface.h"
+      #define USE_COMM_INTERFACE
+  #else
   #define USE_DCC_INTERFACE
   #define DCC_STATUS_PIN  2  // Build in LED
   #include "DCCInterface.h"
+      #define DCC_SIGNAL_PIN   13
+      #define USE_COMM_INTERFACE
+  #endif
   #include "InMemoryStream.h"
 
-  #define EEPROM_SIZE 512			// maximum size of the eeprom
-  //#define EEPROM_OFFSET 0			// (the first 96 byte are reserved for WIFI configuration)  // 28.11.2020 comment out -> WIFI config no longer stored in EEPROM
   #ifdef USE_SPI_COM
 	#error "USE_SPI_COM can't be used on ESP32 platform"
   #endif
-  #define DCC_SIGNAL_PIN   13
   
 #endif
 
@@ -290,6 +300,7 @@
   const uint NUM_LEDS_TO_EMULATE = 1;
   #include "ws2811.hpp"
   #define USE_DCC_INTERFACE
+  #define USE_COMM_INTERFACE
   #define DCC_STATUS_PIN  LED_BUILTIN
   #include "DCCInterface.h"
   #include "InMemoryStream.h"
@@ -489,31 +500,14 @@ CRGB leds[NUM_LEDS];           // Define the array of leds
   uint8_t Handle_Command(uint8_t Type, const uint8_t* arguments, bool process);
 #endif
 
-// Define the MobaLedLib instance
-  MobaLedLib_CreateEx(leds
-#if _USE_STORE_STATUS
-  #if defined(ENABLE_STORE_STATUS)                                                                             // 19.05.20: Juergen
-    , On_Callback
-  #else
-    , NULL
-  #endif
-#endif
-#if _USE_EXT_PROC                                                                                              // 26.09.21: Juergen
-  #if defined(_ENABLE_EXT_PROC)
-    , Handle_Command
-  #else
-    , NULL
-  #endif
-#endif
-    );
-
-
+MobaLedLib_Prepare();
+#define MobaLedLib (*pMobaLedLib)
 
 #if defined LED_HEARTBEAT_PIN && LED_HEARTBEAT_PIN >= 0
   LED_Heartbeat_C LED_HeartBeat(LED_HEARTBEAT_PIN); // Initialize the heartbeat LED which is flashing if the program runs.
 #endif
 
-#if defined USE_SPI_COM || defined USE_LOCONET_INTERFACE || defined USE_DCC_INTERFACE                         // 12.11.20 Juergen use second buffer for DCC interface communication
+#if defined USE_SPI_COM || defined USE_LOCONET_INTERFACE || defined USE_COMM_INTERFACE                        // 12.11.20 Juergen use second buffer for DCC interface communication
   char Buffer[2][13] = {"",""};
 #else
   char Buffer[1][13] = {""};
@@ -521,15 +515,14 @@ CRGB leds[NUM_LEDS];           // Define the array of leds
 
 #ifdef ESP32                                                                                                  // 30.10.20: Juergen
   TaskHandle_t  MLLTaskHnd ;
-  TaskHandle_t  Core1TaskHnd ;
   #include "esp_log.h"
 #endif
 
-#if defined USE_DCC_INTERFACE || defined USE_LOCONET_INTERFACE
+#if defined USE_COMM_INTERFACE || defined USE_LOCONET_INTERFACE
 InMemoryStream stream(256);
 #endif
-#if defined USE_DCC_INTERFACE 
-DCCInterface dccInterface;
+#if defined USE_COMM_INTERFACE 
+CommInterface* commInterface;
 #endif
 
 bool Send_Disable_Pin_Active = 1;                                                                             // 13.05.20:
@@ -808,7 +801,7 @@ uint8_t Handle_Command(uint8_t Type, const uint8_t* arguments, bool process)
            *Value = EEPROM.read(EEPromAddr);
 #endif
            #if defined(DEBUG_STORE_STATUS) && 1
-             { char s[80]; sprintf(s, "Initialite Counter %d@EEAdr %d=%d", ValueId, EEPromAddr, *Value); Serial.println(s); Serial.flush();} // Debug
+             { char s[80]; sprintf(s, "Initialize Counter %d@EEAdr %d=%d", ValueId, EEPromAddr, *Value); Serial.println(s); Serial.flush();} // Debug
            #endif
            }
 
@@ -1173,7 +1166,7 @@ uint8_t Handle_Command(uint8_t Type, const uint8_t* arguments, bool process)
 		}
 	#endif
 
-#if defined USE_DCC_INTERFACE || defined USE_LOCONET_INTERFACE                                                // Juergen: get Data from DCCInterface
+#if defined USE_COMM_INTERFACE || defined USE_LOCONET_INTERFACE                                                // Juergen: get Data from DCCInterface
     if (stream.available())
     {
       Buff_Nr = 1;                                                                                             // Juergen: ESP32 doesn't use SPI buffer, so re-use Buffe1
@@ -1346,6 +1339,29 @@ uint8_t Handle_Command(uint8_t Type, const uint8_t* arguments, bool process)
 void setup(){
 //-----------
   Serial.begin(SERIAL_BAUD); // Communication with the DCC-Arduino must be fast
+#ifdef ESP32
+  if (!EEPROM.begin(EEPROM_SIZE))                                                                             // 19.01.21: Juergen: Old: 100
+  {
+    Serial.println("failed to initialise EEPROM");
+  }
+  esp_log_level_set("*", ESP_LOG_NONE);
+#endif
+  MobaLedLibPtr_CreateEx(leds
+#if _USE_STORE_STATUS
+  #if defined(ENABLE_STORE_STATUS)                                                                             // 19.05.20: Juergen
+    , On_Callback
+  #else
+    , NULL
+  #endif
+#endif
+#if _USE_EXT_PROC                                                                                              // 26.09.21: Juergen
+  #if defined(_ENABLE_EXT_PROC)
+    , Handle_Command
+  #else
+    , NULL
+  #endif
+#endif
+    );
   #ifdef SETUP_FASTLED // Use a special FastLED Setup macro defined in the LEDs_AutoProg.h                    // 26.04.20:
     SETUP_FASTLED();
 
@@ -1376,13 +1392,6 @@ void setup(){
 	  Serial.print(F("#Color Test LED cnt:")); Serial.println(NUM_LEDS); // Without this message the program fails with the message
 	#endif
   #endif                                                                 //   "Error ARDUINO is not answering"
-  #ifdef ESP32
-    if (!EEPROM.begin(512))                                                                                   // 19.01.21: Juergen: Old: 100
-    {
-      Serial.println("failed to initialise EEPROM");
-    }
-	esp_log_level_set("*", ESP_LOG_NONE);
-  #endif
 
 //  #define GCC_VERSION (__GNUC__ * 10000L + __GNUC_MINOR__ * 100L + __GNUC_PATCHLEVEL__)
 //  Serial.print(F("GCC_VERSION:")); Serial.println(GCC_VERSION);
@@ -1587,7 +1596,9 @@ void setup(){
   #ifndef DCC_STATUS_PIN
   #define DCC_STATUS_PIN -1
   #endif
-  dccInterface.setup(DCC_SIGNAL_PIN, DCC_STATUS_PIN, stream, 
+  DCCInterface* interf = new DCCInterface();
+  commInterface = interf;
+  interf->setup(DCC_SIGNAL_PIN, DCC_STATUS_PIN, stream, 
 #ifdef NO_DCC_PULLUP
   false
 #else
@@ -1595,13 +1606,17 @@ void setup(){
 #endif    
   );
 #endif
-
 #ifdef ESP32                                                                                                  // 30.10.20: Juergen
-  // reset the GPIO pin mapping - caused by a bug in FastLED 3.3.3 rmt module GPIO0 was remapped and not      // 02.12.20:  Juergen
-  // accessbile as a GPIO anymore.
-  // remove workaround when fix is available in FastLED library
-  gpio_matrix_out(gpio_num_t(0), 0x100, false, false);                                                                                   // 02.12.20: Juergen
 
+  #ifdef USE_SX_INTERFACE
+    #ifndef SX_STATUS_PIN
+      #define SX_STATUS_PIN -1
+    #endif
+    SXInterface* interf = new SXInterface();
+    commInterface = interf;
+    interf->setup(SX_SIGNAL_PIN, SX_CLOCK_PIN, SX_STATUS_PIN, stream);
+  #endif  
+  
   #if !defined(Mainboard_LED1)																				  // 12.11.20: Juergen initialize Mainboard leds
 	#if defined(USE_NEW_LED_ARRAY)																			  // if mainboard led isn't configured at all just clear the output
 		FastPin<LED1_PIN>::setInput();
@@ -2000,8 +2015,8 @@ void Set_Mainboard_LEDs()
 //-----------
 void loop(){
 //-----------
-#ifdef USE_DCC_INTERFACE
-  dccInterface.process();
+#ifdef USE_COMM_INTERFACE
+  commInterface->process();
 #endif
 
 #ifndef ESP32
@@ -2024,7 +2039,7 @@ void MLLTask( void * parameter ) {
   while(1) {
     MLLMainLoop();
     yield();
-    delay (10);
+    delay (1);
   }
 }
 #endif

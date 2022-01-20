@@ -96,7 +96,7 @@
 
 #include "MobaLedLib.h"  // Use the Moba Led Library
 
-#include <mcp_can.h>     // The MCP CAN library must be installed in addition if you got the error message "..fatal error: mcp_can.h: No such file or directory" https://github.com/coryjfowler/MCP_CAN_lib
+#include "mcp_can_nd.h"  // The MCP CAN library must be installed in addition if you got the error message "..fatal error: mcp_can.h: No such file or directory" https://github.com/coryjfowler/MCP_CAN_lib
                          // Download the ZIP file from https://github.com/coryjfowler/MCP_CAN_lib
                          // Arduino IDE: Sketch / Include library / Add .ZIP library...                 Deutsche IDE: Sketch / Bibliothek einbinden / .ZIP Bibliothek hinzufuegen...
                          //              Navigate to the download directory and select the file                       Zum Download Verzeichnis werchseln und die Datei auswaehlen
@@ -108,12 +108,16 @@
                          //            If your program uses to much memory you get the following warning:
                          //              "Low memory available, stability problems may occur."
 #include <SPI.h>
-#include "Add_Message_to_Filter.h"
+#include "Add_Message_to_Filter_nd.h"
 
 #include "Check_UpdateTime.h"
 
 #define NUM_LEDS     256 // Number of LEDs without spare channels (Maximal 256 RGB LEDs could be used)
+#if defined (__AVR_ATmega168__) || defined (__AVR_ATmega328P__)
 #define LED_DO_PIN   6   // Pin D6 is connected to the LED stripe
+#else 
+#error this example does not support this plattform
+#endif
 #define CAN_CS_PIN   10  // Pin D10 is used as chip select for the CAN bus
 
 #define LED_HEARTBEAT_PIN 17 // The build in LED can't be use because the pin is used as clock port for the SPI bus
