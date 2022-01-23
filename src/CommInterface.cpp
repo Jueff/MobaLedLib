@@ -31,28 +31,25 @@ Documents:
 Revision History :
 ~~~~~~~~~~~~~~~~~
 06.12.21:  Versions 1.0 (Jürgen)
-18.12.21:  fix signal reappear detection bug
-02.01.22:  Juergen add support for DCC receive on LED Arduino
 */
+
+#if defined(ESP32)
 
 #include "CommInterface.h"
 #include "Helpers.h"
 
-static uint8_t       Error               = 0;             
-static unsigned long NextStatusFlash     = 0;
-static unsigned long LastSignalTime      = 0;
-static int           StatusLedPin        = -1;
+static uint8_t  Error               = 0;             
+static uint32_t NextStatusFlash     = 0;
+static uint32_t LastSignalTime      = 0;
+static int      StatusLedPin        = -1;
+InMemoryStream* CommInterface::pStream;
+
 
 //                                       States On    Off   On  Off  On   Off
 static uint16_t OK_Flash_Table[]          = { 2,     1500, 1500                     };
-#ifndef __AVR__                                                                             // AVR doesn't use a send buffer
 static uint16_t BufferFull_Flash_Table[]  = { 6,     100,  100, 100, 100, 100, 400  };
-#endif
 static uint16_t NoSignal_Flash_Table[]    = { 2,     50,   450                      };
 static uint8_t  FlashState = 1;
-
-#ifndef __AVR__                                                                             // AVR doesn't use a send buffer
-InMemoryStream* CommInterface::pStream;
 
 //---------------------------------
 void CommInterface::addToSendBuffer(const char *s)
@@ -66,20 +63,12 @@ void CommInterface::addToSendBuffer(const char *s)
 }
 
 //-----------
-
 void CommInterface::setup(int statusLedPin, InMemoryStream& stream){
   //-----------
   pStream = &stream;
   StatusLedPin = statusLedPin;
   if (StatusLedPin>=0) pinMode(StatusLedPin, OUTPUT);
 }
-#else
-void CommInterface::setup(int statusLedPin){
-  //-----------
-  StatusLedPin = statusLedPin;
-  if (StatusLedPin>=0) pinMode(StatusLedPin, OUTPUT);
-}
-#endif
 
 //---------------------------------
 void CommInterface::processErrorLed()
@@ -89,28 +78,21 @@ void CommInterface::processErrorLed()
   
   static uint16_t *Flash_Table_p     = OK_Flash_Table;
   static uint16_t *Old_Flash_Table_p = OK_Flash_Table;
-  static unsigned long NextCheck = 0;
+  static uint32_t NextCheck = 0;
 
-  auto t = millis();
+  uint32_t t = millis();
   if (t >= NextCheck) // Check the Status and the error every 100 ms
   {
     NextCheck = t + 100;
-    if ((millis()-LastSignalTime) > 1000)
-    {
-      LastSignalTime = 0;
-      Error = 0;              // don't show an error when signal comes back
-    }
     if (LastSignalTime==0)   // no SX signal
     {
       Flash_Table_p = NoSignal_Flash_Table;
     }
-#ifndef __AVR__                                                                             // AVR doesn't use a send buffer
     else if (Error) // Fast flash frequency if an buffer overflow was detected
     {
       Flash_Table_p = BufferFull_Flash_Table;
       Error--; // Decrement the error counter if the communication is working again
     }
-#endif    
     else 
     {
       Flash_Table_p = OK_Flash_Table;
@@ -137,15 +119,17 @@ void CommInterface::process(){
   processErrorLed();
 }
 
-void CommInterface::setLastSignalTime(unsigned long lastSignalTime) 
+void CommInterface::setLastSignalTime(uint32_t lastSignalTime) 
 {
   if ((millis()-lastSignalTime) > 1000)
   {
     LastSignalTime = 0;
-    Error = 0;              // don't show an error when signal comes back
+    Error = 0;              // don't show an error when SX signal comes back
   }
   else
   {
     LastSignalTime = lastSignalTime;
   }
 }
+
+#endif

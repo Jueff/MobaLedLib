@@ -29,33 +29,21 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 Revision History :
 ~~~~~~~~~~~~~~~~~
 06.12.21:  Versions 1.0 (Jürgen)
-02.01.22:  Juergen add support for DCC receive on LED Arduino  
+  
 */
 
-#if !defined(__AVR__)                                                                                      // 02.01.22: Juergen add support for DCC receive on LED Arduino
-  #include "InMemoryStream.h"
-#else
-  #include <Arduino.h>
-#endif
+#include "InMemoryStream.h"
 
 class CommInterface
 {
 private:
-#if !defined(__AVR__)                                                                                      // 02.01.22: Juergen add support for DCC receive on LED Arduino
   static InMemoryStream* pStream;
-#endif  
 
 public:
-  virtual void	process();
-
-// dual core CPUs use a stream to exchange data between cores
-#if !defined(__AVR__)                                                                                     // 02.01.22: Juergen add support for DCC receive on LED Arduino
   virtual void	setup(int statusLedPin, InMemoryStream& stream);
+  virtual void	process();
   static void   addToSendBuffer(const char *s);
-#else
-  virtual void	setup(int statusLedPin);
-#endif
-  static void   setLastSignalTime(unsigned long lastSignalTime);
+  static void   setLastSignalTime(uint32_t lastSignalTime);
 
 private:	
   static void   processErrorLed();
